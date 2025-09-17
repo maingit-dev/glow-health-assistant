@@ -6,6 +6,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Heart, Activity, Moon, Droplets, Brain, TrendingUp, User, LogOut, Sparkles, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { ActivityModal } from "./ActivityModal";
+import { SleepModal } from "./SleepModal";
+import { MoodModal } from "./MoodModal";
 
 interface UserProfile {
   full_name: string;
@@ -31,6 +34,9 @@ export const Dashboard = () => {
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [activityModalOpen, setActivityModalOpen] = useState(false);
+  const [sleepModalOpen, setSleepModalOpen] = useState(false);
+  const [moodModalOpen, setMoodModalOpen] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -359,20 +365,37 @@ export const Dashboard = () => {
             <span>{insightsLoading ? "Generating..." : "Get AI Insights"}</span>
           </Button>
           
-          <Button variant="outline" className="flex items-center space-x-2">
+          <Button variant="outline" className="flex items-center space-x-2" onClick={() => setActivityModalOpen(true)}>
             <Activity className="w-4 h-4" />
             <span>Log Activity</span>
           </Button>
-          <Button variant="outline" className="flex items-center space-x-2">
+          <Button variant="outline" className="flex items-center space-x-2" onClick={() => setSleepModalOpen(true)}>
             <Moon className="w-4 h-4" />
             <span>Update Sleep</span>
           </Button>
-          <Button variant="outline" className="flex items-center space-x-2">
+          <Button variant="outline" className="flex items-center space-x-2" onClick={() => setMoodModalOpen(true)}>
             <Brain className="w-4 h-4" />
             <span>Mood Check-in</span>
           </Button>
         </div>
       </main>
+
+      {/* Modals */}
+      <ActivityModal 
+        open={activityModalOpen} 
+        onOpenChange={setActivityModalOpen}
+        onUpdate={fetchUserData}
+      />
+      <SleepModal 
+        open={sleepModalOpen} 
+        onOpenChange={setSleepModalOpen}
+        onUpdate={fetchUserData}
+      />
+      <MoodModal 
+        open={moodModalOpen} 
+        onOpenChange={setMoodModalOpen}
+        onUpdate={fetchUserData}
+      />
     </div>
   );
 };
