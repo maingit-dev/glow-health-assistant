@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Heart, Activity, Moon, Droplets, Brain, TrendingUp, User, LogOut } from "lucide-react";
+import { Heart, Activity, Moon, Droplets, Brain, TrendingUp, User, LogOut, Sparkles, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface UserProfile {
@@ -22,12 +23,14 @@ interface HealthData {
   allergies: string[];
   medical_conditions: string[];
   health_goals: string[];
+  ai_insights?: any; // Using any for now to handle JSON type from Supabase
 }
 
 export const Dashboard = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [insightsLoading, setInsightsLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -80,6 +83,39 @@ export const Dashboard = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateHealthInsights = async () => {
+    setInsightsLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      const response = await supabase.functions.invoke('health-insights', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (response.error) throw response.error;
+
+      toast({
+        title: "AI Insights Generated!",
+        description: "Your personalized health insights have been updated.",
+      });
+
+      // Refresh health data to get the new insights
+      await fetchUserData();
+    } catch (error: any) {
+      console.error('Error generating insights:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate insights. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setInsightsLoading(false);
     }
   };
 
@@ -204,6 +240,48 @@ export const Dashboard = () => {
           </Card>
         </div>
 
+        {/* AI Insights Section */}
+        {healthData?.ai_insights && (
+          <div className="mb-8">
+            <Card className="shadow-card bg-gradient-to-br from-primary/5 to-secondary/5 border-primary/20">
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  <span>AI Health Insights</span>
+                  <Badge variant="secondary" className="ml-2">Powered by Gemini</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="bg-card/50 p-4 rounded-lg">
+                  <h4 className="font-semibold mb-2">Health Summary</h4>
+                  <p className="text-muted-foreground">{healthData.ai_insights.health_summary}</p>
+                </div>
+                
+                {healthData.ai_insights.insights && (
+                  <div>
+                    <h4 className="font-semibold mb-3">Personalized Recommendations</h4>
+                    <div className="grid gap-2">
+                      {healthData.ai_insights.insights.map((insight: string, index: number) => (
+                        <div key={index} className="flex items-start space-x-2">
+                          <div className="w-2 h-2 bg-primary rounded-full mt-2 flex-shrink-0"></div>
+                          <span className="text-sm">{insight}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {healthData.ai_insights.daily_reminder && (
+                  <div className="bg-accent/10 p-4 rounded-lg border border-accent/20">
+                    <h4 className="font-semibold mb-2 text-accent-dark">Today's Focus</h4>
+                    <p className="text-sm">{healthData.ai_insights.daily_reminder}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         {/* Health Insights */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <Card className="shadow-card">
@@ -267,7 +345,21 @@ export const Dashboard = () => {
 
         {/* Action Buttons */}
         <div className="flex flex-wrap gap-4">
-          <Button variant="wellness" className="flex items-center space-x-2">
+          <Button 
+            variant="wellness" 
+            className="flex items-center space-x-2"
+            onClick={generateHealthInsights}
+            disabled={insightsLoading}
+          >
+            {insightsLoading ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            <span>{insightsLoading ? "Generating..." : "Get AI Insights"}</span>
+          </Button>
+          
+          <Button variant="outline" className="flex items-center space-x-2">
             <Activity className="w-4 h-4" />
             <span>Log Activity</span>
           </Button>

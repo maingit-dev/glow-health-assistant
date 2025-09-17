@@ -1,0 +1,225 @@
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const geminiApiKey = Deno.env.get('GEMINI_API_KEY')!;
+
+serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    
+    // Get the authorization header
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new Error('No authorization header');
+    }
+
+    // Get user from token
+    const { data: { user }, error: userError } = await supabase.auth.getUser(
+      authHeader.replace('Bearer ', '')
+    );
+    
+    if (userError || !user) {
+      throw new Error('Unauthorized');
+    }
+
+    console.log('Processing health insights for user:', user.id);
+
+    // Fetch user's profile and health data
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+
+    const { data: healthData } = await supabase
+      .from('health_data')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+
+    if (!profile || !healthData) {
+      throw new Error('User profile or health data not found');
+    }
+
+    // Calculate BMI for context
+    const heightInM = healthData.height_cm / 100;
+    const bmi = (healthData.weight_kg / (heightInM * heightInM)).toFixed(1);
+
+    // Prepare context for AI
+    const healthContext = {
+      name: profile.full_name?.split(' ')[0] || 'User',
+      age: profile.age,
+      gender: profile.gender,
+      bmi: bmi,
+      weight: healthData.weight_kg,
+      height: healthData.height_cm,
+      sleepHours: healthData.sleep_hours,
+      activityLevel: healthData.activity_level,
+      stressLevel: healthData.stress_level,
+      allergies: healthData.allergies,
+      medicalConditions: healthData.medical_conditions,
+      healthGoals: healthData.health_goals
+    };
+
+    // Create AI prompt for health insights
+    const prompt = `As a health and wellness AI assistant, analyze this user's health profile and provide personalized insights and recommendations.
+
+User Profile:
+- Name: ${healthContext.name}
+- Age: ${healthContext.age} years
+- Gender: ${healthContext.gender}
+- BMI: ${healthContext.bmi}
+- Weight: ${healthContext.weight} kg
+- Height: ${healthContext.height} cm
+- Sleep: ${healthContext.sleepHours} hours/night
+- Activity Level: ${healthContext.activityLevel}
+- Stress Level: ${healthContext.stressLevel}/10
+- Allergies: ${healthContext.allergies?.join(', ') || 'None reported'}
+- Medical Conditions: ${healthContext.medicalConditions?.join(', ') || 'None reported'}
+- Health Goals: ${healthContext.healthGoals?.join(', ') || 'None set'}
+
+Please provide:
+1. A brief 2-3 line health summary
+2. 3-4 specific, actionable recommendations
+3. One daily reminder/tip
+4. Any health trends or concerns to watch
+
+Return your response as valid JSON in this exact format:
+{
+  "user_id": "${user.id}",
+  "basic_info": {
+    "bmi": ${healthContext.bmi},
+    "sleep_quality": "assessment",
+    "activity_status": "assessment",
+    "stress_status": "assessment"
+  },
+  "health_summary": "2-3 line personalized summary",
+  "insights": [
+    "Specific recommendation 1",
+    "Specific recommendation 2", 
+    "Specific recommendation 3",
+    "Specific recommendation 4"
+  ],
+  "daily_reminder": "Short actionable daily tip",
+  "trends": [
+    "Important trend or concern to monitor"
+  ]
+}
+
+Keep recommendations specific, actionable, and appropriate for their profile. Be encouraging but honest about health concerns.`;
+
+    // Call Gemini AI API
+    const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 1024,
+        }
+      }),
+    });
+
+    if (!geminiResponse.ok) {
+      const errorText = await geminiResponse.text();
+      console.error('Gemini API error:', errorText);
+      throw new Error(`Gemini API error: ${geminiResponse.status}`);
+    }
+
+    const geminiData = await geminiResponse.json();
+    console.log('Gemini response:', geminiData);
+
+    if (!geminiData.candidates?.[0]?.content?.parts?.[0]?.text) {
+      throw new Error('No content generated by Gemini');
+    }
+
+    let aiInsights;
+    try {
+      // Extract JSON from the response
+      const responseText = geminiData.candidates[0].content.parts[0].text;
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        aiInsights = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('No JSON found in response');
+      }
+    } catch (parseError) {
+      console.error('Failed to parse AI response:', parseError);
+      
+      // Fallback response
+      aiInsights = {
+        user_id: user.id,
+        basic_info: {
+          bmi: healthContext.bmi,
+          sleep_quality: healthContext.sleepHours >= 7 ? "good" : "needs improvement",
+          activity_status: healthContext.activityLevel || "unknown",
+          stress_status: healthContext.stressLevel > 7 ? "high" : "manageable"
+        },
+        health_summary: `Based on your profile, you have a BMI of ${healthContext.bmi}. Focus on maintaining healthy sleep patterns and managing stress levels.`,
+        insights: [
+          "Aim for 7-9 hours of quality sleep each night",
+          "Stay hydrated with 8 glasses of water daily",
+          "Include 30 minutes of physical activity",
+          "Practice stress-reduction techniques like meditation"
+        ],
+        daily_reminder: "Take a 10-minute walk and drink a glass of water",
+        trends: ["Monitor sleep quality and stress levels"]
+      };
+    }
+
+    // Update health data with AI insights
+    const { error: updateError } = await supabase
+      .from('health_data')
+      .update({
+        ai_insights: aiInsights,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', user.id);
+
+    if (updateError) {
+      console.error('Error updating health data:', updateError);
+    }
+
+    console.log('Health insights generated successfully for user:', user.id);
+
+    return new Response(JSON.stringify(aiInsights), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+
+  } catch (error: any) {
+    console.error('Error in health-insights function:', error);
+    return new Response(
+      JSON.stringify({ 
+        error: error.message,
+        user_id: null,
+        health_summary: "Unable to generate insights at this time. Please try again later."
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+  }
+});
