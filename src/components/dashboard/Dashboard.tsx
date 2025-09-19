@@ -4,11 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Heart, Activity, Moon, Droplets, Brain, TrendingUp, User, LogOut, Sparkles, RefreshCw } from "lucide-react";
+import { Heart, Activity, Moon, Droplets, Brain, TrendingUp, User, LogOut, Sparkles, RefreshCw, BarChart3, AlertCircle, Pill } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ActivityModal } from "./ActivityModal";
 import { SleepModal } from "./SleepModal";
 import { MoodModal } from "./MoodModal";
+import { HealthTrendsChart } from "../analytics/HealthTrendsChart";
+import { SymptomsTracker } from "../tracking/SymptomsTracker";
+import { MedicationReminders } from "../tracking/MedicationReminders";
 
 interface UserProfile {
   full_name: string;
@@ -37,6 +40,7 @@ export const Dashboard = () => {
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [sleepModalOpen, setSleepModalOpen] = useState(false);
   const [moodModalOpen, setMoodModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"overview" | "analytics" | "tracking">("overview");
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -349,35 +353,92 @@ export const Dashboard = () => {
           </Card>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap gap-4">
-          <Button 
-            variant="wellness" 
-            className="flex items-center space-x-2"
-            onClick={generateHealthInsights}
-            disabled={insightsLoading}
-          >
-            {insightsLoading ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <Sparkles className="w-4 h-4" />
-            )}
-            <span>{insightsLoading ? "Generating..." : "Get AI Insights"}</span>
-          </Button>
-          
-          <Button variant="outline" className="flex items-center space-x-2" onClick={() => setActivityModalOpen(true)}>
-            <Activity className="w-4 h-4" />
-            <span>Log Activity</span>
-          </Button>
-          <Button variant="outline" className="flex items-center space-x-2" onClick={() => setSleepModalOpen(true)}>
-            <Moon className="w-4 h-4" />
-            <span>Update Sleep</span>
-          </Button>
-          <Button variant="outline" className="flex items-center space-x-2" onClick={() => setMoodModalOpen(true)}>
-            <Brain className="w-4 h-4" />
-            <span>Mood Check-in</span>
-          </Button>
+        {/* Navigation Tabs */}
+        <div className="mb-8">
+          <div className="flex space-x-1 bg-muted p-1 rounded-lg w-fit">
+            <Button
+              variant={activeTab === "overview" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setActiveTab("overview")}
+              className="flex items-center space-x-2"
+            >
+              <User className="w-4 h-4" />
+              <span>Overview</span>
+            </Button>
+            <Button
+              variant={activeTab === "analytics" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setActiveTab("analytics")}
+              className="flex items-center space-x-2"
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>Analytics</span>
+            </Button>
+            <Button
+              variant={activeTab === "tracking" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setActiveTab("tracking")}
+              className="flex items-center space-x-2"
+            >
+              <AlertCircle className="w-4 h-4" />
+              <span>Tracking</span>
+            </Button>
+          </div>
         </div>
+
+        {/* Tab Content */}
+        {activeTab === "overview" && (
+          <>
+            {/* Action Buttons */}
+            <div className="flex flex-wrap gap-4 mb-8">
+              <Button 
+                variant="wellness" 
+                className="flex items-center space-x-2"
+                onClick={generateHealthInsights}
+                disabled={insightsLoading}
+              >
+                {insightsLoading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                <span>{insightsLoading ? "Generating..." : "Get AI Insights"}</span>
+              </Button>
+              
+              <Button variant="outline" className="flex items-center space-x-2" onClick={() => setActivityModalOpen(true)}>
+                <Activity className="w-4 h-4" />
+                <span>Log Activity</span>
+              </Button>
+              <Button variant="outline" className="flex items-center space-x-2" onClick={() => setSleepModalOpen(true)}>
+                <Moon className="w-4 h-4" />
+                <span>Update Sleep</span>
+              </Button>
+              <Button variant="outline" className="flex items-center space-x-2" onClick={() => setMoodModalOpen(true)}>
+                <Brain className="w-4 h-4" />
+                <span>Mood Check-in</span>
+              </Button>
+            </div>
+          </>
+        )}
+
+        {activeTab === "analytics" && (
+          <div className="space-y-6">
+            <HealthTrendsChart />
+          </div>
+        )}
+
+        {activeTab === "tracking" && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <SymptomsTracker />
+              </div>
+              <div>
+                <MedicationReminders />
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Modals */}
