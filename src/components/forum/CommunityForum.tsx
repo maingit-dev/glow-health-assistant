@@ -59,14 +59,23 @@ export const CommunityForum = () => {
 
   const fetchPosts = async () => {
     try {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*')
-        .order('created_at', { ascending: false });
+      // Use any to bypass type checking for new tables
+      const query = supabase.from('posts' as any).select('*').order('created_at', { ascending: false });
+      const { data, error } = await query;
 
-      if (error) throw error;
-      setPosts(data || []);
+      if (error) {
+        console.error('Posts fetch error:', error);
+        throw error;
+      }
+      
+      // Type guard to ensure we have the right data structure
+      if (data && Array.isArray(data)) {
+        setPosts(data as unknown as Post[]);
+      } else {
+        setPosts([]);
+      }
     } catch (error) {
+      console.error('Error fetching posts:', error);
       toast.error("Failed to load posts");
     } finally {
       setIsLoading(false);
@@ -75,15 +84,22 @@ export const CommunityForum = () => {
 
   const fetchComments = async (postId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('comments')
-        .select('*')
-        .eq('post_id', postId)
-        .order('created_at', { ascending: true });
+      const query = supabase.from('comments' as any).select('*').eq('post_id', postId).order('created_at', { ascending: true });
+      const { data, error } = await query;
 
-      if (error) throw error;
-      setComments(prev => ({ ...prev, [postId]: data || [] }));
+      if (error) {
+        console.error('Comments fetch error:', error);
+        throw error;
+      }
+      
+      // Type guard to ensure we have the right data structure
+      if (data && Array.isArray(data)) {
+        setComments(prev => ({ ...prev, [postId]: data as unknown as Comment[] }));
+      } else {
+        setComments(prev => ({ ...prev, [postId]: [] }));
+      }
     } catch (error) {
+      console.error('Error fetching comments:', error);
       toast.error("Failed to load comments");
     }
   };
@@ -98,7 +114,7 @@ export const CommunityForum = () => {
       const tags = newPost.tags.split(',').map(tag => tag.trim()).filter(Boolean);
       
       const { error } = await supabase
-        .from('posts')
+        .from('posts' as any)
         .insert({
           title: newPost.title,
           content: newPost.content,
@@ -113,6 +129,7 @@ export const CommunityForum = () => {
       fetchPosts();
       toast.success("Post created successfully!");
     } catch (error) {
+      console.error('Error creating post:', error);
       toast.error("Failed to create post");
     }
   };
@@ -125,7 +142,7 @@ export const CommunityForum = () => {
 
     try {
       const { error } = await supabase
-        .from('comments')
+        .from('comments' as any)
         .insert({
           post_id: postId,
           content: newComment,
@@ -139,13 +156,14 @@ export const CommunityForum = () => {
       
       // Update comments count
       await supabase
-        .from('posts')
+        .from('posts' as any)
         .update({ comments_count: (comments[postId]?.length || 0) + 1 })
         .eq('id', postId);
       
       fetchPosts();
       toast.success("Comment added!");
     } catch (error) {
+      console.error('Error creating comment:', error);
       toast.error("Failed to add comment");
     }
   };
@@ -155,13 +173,14 @@ export const CommunityForum = () => {
 
     try {
       const { error } = await supabase
-        .from('posts')
+        .from('posts' as any)
         .update({ likes_count: currentLikes + 1 })
         .eq('id', postId);
 
       if (error) throw error;
       fetchPosts();
     } catch (error) {
+      console.error('Error liking post:', error);
       toast.error("Failed to like post");
     }
   };
@@ -373,7 +392,51 @@ export const CommunityForum = () => {
                 <DialogHeader>
                   <DialogTitle>Create New Post</DialogTitle>
                 </DialogHeader>
-                {/* Same form content as above */}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="title">Title</Label>
+                    <Input
+                      id="title"
+                      value={newPost.title}
+                      onChange={(e) => setNewPost(prev => ({ ...prev, title: e.target.value }))}
+                      placeholder="Enter post title..."
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="content">Content</Label>
+                    <Textarea
+                      id="content"
+                      value={newPost.content}
+                      onChange={(e) => setNewPost(prev => ({ ...prev, content: e.target.value }))}
+                      placeholder="Share your thoughts..."
+                      className="min-h-[120px]"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="tags">Tags (comma-separated)</Label>
+                    <Input
+                      id="tags"
+                      value={newPost.tags}
+                      onChange={(e) => setNewPost(prev => ({ ...prev, tags: e.target.value }))}
+                      placeholder="health, wellness, period, mood..."
+                    />
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="anonymous"
+                      checked={newPost.is_anonymous}
+                      onCheckedChange={(checked) => setNewPost(prev => ({ ...prev, is_anonymous: checked }))}
+                    />
+                    <Label htmlFor="anonymous">Post anonymously</Label>
+                  </div>
+                  
+                  <Button onClick={createPost} className="w-full" variant="wellness">
+                    Create Post
+                  </Button>
+                </div>
               </DialogContent>
             </Dialog>
           )}

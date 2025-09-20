@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Heart, Activity, Moon, Droplets, Brain, TrendingUp, User, LogOut, Sparkles, RefreshCw, BarChart3, AlertCircle, Pill } from "lucide-react";
@@ -9,9 +10,11 @@ import { useNavigate } from "react-router-dom";
 import { ActivityModal } from "./ActivityModal";
 import { SleepModal } from "./SleepModal";
 import { MoodModal } from "./MoodModal";
-import { HealthTrendsChart } from "../analytics/HealthTrendsChart";
-import { SymptomsTracker } from "../tracking/SymptomsTracker";
-import { MedicationReminders } from "../tracking/MedicationReminders";
+import { HealthTrendsChart } from "@/components/analytics/HealthTrendsChart";
+import { SymptomsTracker } from "@/components/tracking/SymptomsTracker";
+import { MedicationReminders } from "@/components/tracking/MedicationReminders";
+import { CommunityForum } from "@/components/forum/CommunityForum";
+import { SmartNotifications } from "@/components/notifications/SmartNotifications";
 
 interface UserProfile {
   full_name: string;
@@ -40,7 +43,7 @@ export const Dashboard = () => {
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [sleepModalOpen, setSleepModalOpen] = useState(false);
   const [moodModalOpen, setMoodModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "analytics" | "tracking">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "analytics" | "symptoms" | "reminders" | "forum" | "notifications">("overview");
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -353,42 +356,18 @@ export const Dashboard = () => {
           </Card>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="mb-8">
-          <div className="flex space-x-1 bg-muted p-1 rounded-lg w-fit">
-            <Button
-              variant={activeTab === "overview" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setActiveTab("overview")}
-              className="flex items-center space-x-2"
-            >
-              <User className="w-4 h-4" />
-              <span>Overview</span>
-            </Button>
-            <Button
-              variant={activeTab === "analytics" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setActiveTab("analytics")}
-              className="flex items-center space-x-2"
-            >
-              <BarChart3 className="w-4 h-4" />
-              <span>Analytics</span>
-            </Button>
-            <Button
-              variant={activeTab === "tracking" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setActiveTab("tracking")}
-              className="flex items-center space-x-2"
-            >
-              <AlertCircle className="w-4 h-4" />
-              <span>Tracking</span>
-            </Button>
-          </div>
-        </div>
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-6">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="symptoms">Symptoms</TabsTrigger>
+            <TabsTrigger value="reminders">Reminders</TabsTrigger>
+            <TabsTrigger value="forum">Forum</TabsTrigger>
+            <TabsTrigger value="notifications">Notifications</TabsTrigger>
+          </TabsList>
 
-        {/* Tab Content */}
-        {activeTab === "overview" && (
-          <>
+          <TabsContent value="overview">
             {/* Action Buttons */}
             <div className="flex flex-wrap gap-4 mb-8">
               <Button 
@@ -418,27 +397,28 @@ export const Dashboard = () => {
                 <span>Mood Check-in</span>
               </Button>
             </div>
-          </>
-        )}
+          </TabsContent>
 
-        {activeTab === "analytics" && (
-          <div className="space-y-6">
+          <TabsContent value="analytics">
             <HealthTrendsChart />
-          </div>
-        )}
+          </TabsContent>
 
-        {activeTab === "tracking" && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div>
-                <SymptomsTracker />
-              </div>
-              <div>
-                <MedicationReminders />
-              </div>
-            </div>
-          </div>
-        )}
+          <TabsContent value="symptoms">
+            <SymptomsTracker />
+          </TabsContent>
+
+          <TabsContent value="reminders">
+            <MedicationReminders />
+          </TabsContent>
+
+          <TabsContent value="forum">
+            <CommunityForum />
+          </TabsContent>
+
+          <TabsContent value="notifications">
+            <SmartNotifications />
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Modals */}
