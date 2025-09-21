@@ -59,21 +59,14 @@ export const CommunityForum = () => {
 
   const fetchPosts = async () => {
     try {
-      // Use any to bypass type checking for new tables
-      const query = supabase.from('posts' as any).select('*').order('created_at', { ascending: false });
-      const { data, error } = await query;
+      const { data, error } = await (supabase as any).from('posts').select('*').order('created_at', { ascending: false });
 
       if (error) {
         console.error('Posts fetch error:', error);
         throw error;
       }
       
-      // Type guard to ensure we have the right data structure
-      if (data && Array.isArray(data)) {
-        setPosts(data as unknown as Post[]);
-      } else {
-        setPosts([]);
-      }
+      setPosts(data || []);
     } catch (error) {
       console.error('Error fetching posts:', error);
       toast.error("Failed to load posts");
@@ -84,20 +77,14 @@ export const CommunityForum = () => {
 
   const fetchComments = async (postId: string) => {
     try {
-      const query = supabase.from('comments' as any).select('*').eq('post_id', postId).order('created_at', { ascending: true });
-      const { data, error } = await query;
+      const { data, error } = await (supabase as any).from('comments').select('*').eq('post_id', postId).order('created_at', { ascending: true });
 
       if (error) {
         console.error('Comments fetch error:', error);
         throw error;
       }
       
-      // Type guard to ensure we have the right data structure
-      if (data && Array.isArray(data)) {
-        setComments(prev => ({ ...prev, [postId]: data as unknown as Comment[] }));
-      } else {
-        setComments(prev => ({ ...prev, [postId]: [] }));
-      }
+      setComments(prev => ({ ...prev, [postId]: data || [] }));
     } catch (error) {
       console.error('Error fetching comments:', error);
       toast.error("Failed to load comments");
@@ -113,8 +100,8 @@ export const CommunityForum = () => {
     try {
       const tags = newPost.tags.split(',').map(tag => tag.trim()).filter(Boolean);
       
-      const { error } = await supabase
-        .from('posts' as any)
+      const { error } = await (supabase as any)
+        .from('posts')
         .insert({
           title: newPost.title,
           content: newPost.content,
@@ -141,8 +128,8 @@ export const CommunityForum = () => {
     }
 
     try {
-      const { error } = await supabase
-        .from('comments' as any)
+      const { error } = await (supabase as any)
+        .from('comments')
         .insert({
           post_id: postId,
           content: newComment,
@@ -155,8 +142,8 @@ export const CommunityForum = () => {
       fetchComments(postId);
       
       // Update comments count
-      await supabase
-        .from('posts' as any)
+      await (supabase as any)
+        .from('posts')
         .update({ comments_count: (comments[postId]?.length || 0) + 1 })
         .eq('id', postId);
       
@@ -172,8 +159,8 @@ export const CommunityForum = () => {
     if (!user) return;
 
     try {
-      const { error } = await supabase
-        .from('posts' as any)
+      const { error } = await (supabase as any)
+        .from('posts')
         .update({ likes_count: currentLikes + 1 })
         .eq('id', postId);
 
