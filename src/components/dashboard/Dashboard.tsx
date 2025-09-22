@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Heart, Activity, Moon, Droplets, Brain, TrendingUp, User, LogOut, Sparkles, RefreshCw, BarChart3, AlertCircle, Pill } from "lucide-react";
+import { Heart, Activity, Moon, Droplets, Brain, TrendingUp, User, LogOut, Sparkles, RefreshCw, BarChart3, AlertCircle, Pill, Wifi, WifiOff, Clock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ActivityModal } from "./ActivityModal";
 import { SleepModal } from "./SleepModal";
@@ -44,22 +45,126 @@ export const Dashboard = () => {
   const [sleepModalOpen, setSleepModalOpen] = useState(false);
   const [moodModalOpen, setMoodModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "analytics" | "symptoms" | "reminders" | "forum" | "notifications">("overview");
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [realTimeUpdates, setRealTimeUpdates] = useState(0);
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const realtimeChannelRef = useRef<any>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchUserData();
+    setupRealTimeUpdates();
+    setupAutoRefresh();
+    setupOnlineStatusMonitoring();
+    
+    return () => {
+      cleanup();
+    };
   }, []);
 
-  const fetchUserData = async () => {
+  const cleanup = useCallback(() => {
+    if (refreshIntervalRef.current) {
+      clearInterval(refreshIntervalRef.current);
+    }
+    if (realtimeChannelRef.current) {
+      supabase.removeChannel(realtimeChannelRef.current);
+    }
+  }, []);
+
+  const setupOnlineStatusMonitoring = useCallback(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      toast({
+        title: "Connection Restored",
+        description: "Dashboard is now syncing in real-time",
+      });
+      fetchUserData();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      toast({
+        title: "Connection Lost",
+        description: "Dashboard will resume syncing when connection is restored",
+        variant: "destructive",
+      });
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [toast]);
+
+  const setupAutoRefresh = useCallback(() => {
+    if (!autoRefresh) return;
+
+    refreshIntervalRef.current = setInterval(() => {
+      if (isOnline && document.visibilityState === 'visible') {
+        fetchUserData(true); // Silent refresh
+      }
+    }, 30000); // Refresh every 30 seconds
+  }, [autoRefresh, isOnline]);
+
+  const setupRealTimeUpdates = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Listen for real-time updates to health_data and profiles
+    realtimeChannelRef.current = supabase
+      .channel('dashboard-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'health_data',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('Health data updated:', payload);
+          setRealTimeUpdates(prev => prev + 1);
+          fetchUserData(true);
+          toast({
+            title: "Data Updated",
+            description: "Your health data has been updated in real-time",
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'profiles',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('Profile updated:', payload);
+          setRealTimeUpdates(prev => prev + 1);
+          fetchUserData(true);
+        }
+      )
+      .subscribe();
+  }, [toast]);
+
+  const fetchUserData = async (silent = false) => {
     try {
+      if (!silent) setLoading(true);
+      
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         navigate("/auth");
         return;
       }
 
-      // Fetch profile
+      // Fetch profile with optimistic updates
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("*")
@@ -70,7 +175,7 @@ export const Dashboard = () => {
         throw profileError;
       }
 
-      // Fetch health data
+      // Fetch health data with optimistic updates
       const { data: healthData, error: healthError } = await supabase
         .from("health_data")
         .select("*")
@@ -88,14 +193,24 @@ export const Dashboard = () => {
 
       setProfile(profileData);
       setHealthData(healthData);
+      setLastUpdated(new Date());
+      
+      if (!silent) {
+        toast({
+          title: "Dashboard Updated",
+          description: "Latest data loaded successfully",
+        });
+      }
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      if (!silent) {
+        toast({
+          title: "Error",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -164,25 +279,62 @@ export const Dashboard = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="bg-card border-b border-border">
+      <header className="bg-card border-b border-border sticky top-0 z-50 backdrop-blur-sm bg-card/95">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-primary rounded-full flex items-center justify-center">
+              <div className="w-10 h-10 bg-gradient-primary rounded-full flex items-center justify-center relative">
                 <Heart className="w-5 h-5 text-primary-foreground" />
+                {realTimeUpdates > 0 && (
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                )}
               </div>
               <div>
                 <h1 className="text-xl font-bold">Glow Health</h1>
-                <p className="text-sm text-muted-foreground">
-                  Welcome back, {profile?.full_name?.split(" ")[0] || "User"}!
-                </p>
+                <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                  <span>Welcome back, {profile?.full_name?.split(" ")[0] || "User"}!</span>
+                  <div className="flex items-center space-x-1">
+                    {isOnline ? (
+                      <Wifi className="w-3 h-3 text-green-500" />
+                    ) : (
+                      <WifiOff className="w-3 h-3 text-red-500" />
+                    )}
+                    <span className={isOnline ? "text-green-600" : "text-red-600"}>
+                      {isOnline ? "Online" : "Offline"}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
-            <Button variant="outline" onClick={handleSignOut}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign Out
-            </Button>
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                <Clock className="w-3 h-3" />
+                <span>Updated: {lastUpdated.toLocaleTimeString()}</span>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                className={autoRefresh ? "text-green-600" : "text-muted-foreground"}
+              >
+                <RefreshCw className={`w-4 h-4 ${autoRefresh ? "animate-spin" : ""}`} />
+              </Button>
+              <Button variant="outline" onClick={handleSignOut}>
+                <LogOut className="w-4 h-4 mr-2" />
+                Sign Out
+              </Button>
+            </div>
           </div>
+          
+          {/* Live Data Indicator */}
+          {realTimeUpdates > 0 && (
+            <div className="mt-2 flex items-center justify-center">
+              <Badge variant="secondary" className="animate-pulse">
+                <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                Live updates active ({realTimeUpdates} updates received)
+              </Badge>
+            </div>
+          )}
         </div>
       </header>
 
@@ -190,65 +342,134 @@ export const Dashboard = () => {
       <main className="container mx-auto px-6 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
-          <h2 className="text-3xl font-bold mb-2">Health Dashboard</h2>
-          <p className="text-muted-foreground">
-            Track your wellness journey and stay on top of your health goals.
-          </p>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-3xl font-bold mb-2">Health Dashboard</h2>
+              <p className="text-muted-foreground">
+                Track your wellness journey and stay on top of your health goals.
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => fetchUserData()}
+                disabled={loading}
+                className="flex items-center space-x-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+                <span>Refresh</span>
+              </Button>
+            </div>
+          </div>
+          
+          {/* Connection Status */}
+          {!isOnline && (
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4 rounded">
+              <div className="flex items-center">
+                <WifiOff className="w-5 h-5 text-yellow-600 mr-2" />
+                <p className="text-sm text-yellow-700">
+                  You're currently offline. Data will sync when connection is restored.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Quick Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="shadow-card">
+          <Card className="shadow-card hover:shadow-lg transition-all duration-200 border-l-4 border-l-primary/20">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">BMI</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <div className="relative">
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{bmi}</div>
+              <div className="text-2xl font-bold animate-fade-in">{bmi}</div>
               <p className={`text-xs ${bmiStatus.color}`}>
                 {bmiStatus.status}
               </p>
+              <div className="mt-2">
+                <Progress 
+                  value={Math.min((bmi / 35) * 100, 100)} 
+                  className="h-1" 
+                />
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="shadow-card">
+          <Card className="shadow-card hover:shadow-lg transition-all duration-200 border-l-4 border-l-blue-500/20">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Sleep</CardTitle>
-              <Moon className="h-4 w-4 text-muted-foreground" />
+              <div className="relative">
+                <Moon className="h-4 w-4 text-muted-foreground" />
+                <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{healthData?.sleep_hours}h</div>
+              <div className="text-2xl font-bold animate-fade-in">{healthData?.sleep_hours}h</div>
               <p className="text-xs text-muted-foreground">
                 Per night
               </p>
+              <div className="mt-2">
+                <Progress 
+                  value={Math.min(((healthData?.sleep_hours || 0) / 8) * 100, 100)} 
+                  className="h-1" 
+                />
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="shadow-card">
+          <Card className="shadow-card hover:shadow-lg transition-all duration-200 border-l-4 border-l-green-500/20">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Activity</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
+              <div className="relative">
+                <Activity className="h-4 w-4 text-muted-foreground" />
+                <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold capitalize">
+              <div className="text-2xl font-bold capitalize animate-fade-in">
                 {healthData?.activity_level?.replace("-", " ")}
               </div>
               <p className="text-xs text-muted-foreground">
                 Lifestyle
               </p>
+              <div className="mt-2">
+                <Progress 
+                  value={
+                    healthData?.activity_level === 'sedentary' ? 25 :
+                    healthData?.activity_level === 'moderate' ? 50 :
+                    healthData?.activity_level === 'active' ? 75 :
+                    healthData?.activity_level === 'very-active' ? 100 : 0
+                  } 
+                  className="h-1" 
+                />
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="shadow-card">
+          <Card className="shadow-card hover:shadow-lg transition-all duration-200 border-l-4 border-l-orange-500/20">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Stress Level</CardTitle>
-              <Brain className="h-4 w-4 text-muted-foreground" />
+              <div className="relative">
+                <Brain className="h-4 w-4 text-muted-foreground" />
+                <div className="absolute -top-1 -right-1 w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{healthData?.stress_level}/10</div>
+              <div className="text-2xl font-bold animate-fade-in">{healthData?.stress_level}/10</div>
               <p className="text-xs text-muted-foreground">
                 Current level
               </p>
+              <div className="mt-2">
+                <Progress 
+                  value={((healthData?.stress_level || 0) / 10) * 100} 
+                  className="h-1" 
+                />
+              </div>
             </CardContent>
           </Card>
         </div>
